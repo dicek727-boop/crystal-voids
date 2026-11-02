@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>結晶の隙間ビューア</title>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f2eee3; --panel:#e4dece; --ink:#26231c; --muted:#7b7260; --border:#cdc5b0;
+  --seg-on:#26231c; --seg-on-ink:#f2eee3;
+  --note:#fdf3a6; --note-ink:#3a3210;
+  --canvas:#fbf9f2; --ghost:#8a8579; --cellatom:#d93a33; --edge:#6d675a;
+  --tet:#0a7fd1; --oct:#e08a00;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#191918; --panel:#2a2926; --ink:#ece6d2; --muted:#9a9380; --border:#3b3933;
+    --seg-on:#e9e3cd; --seg-on-ink:#191918;
+    --note:#fbf5b6; --note-ink:#33300f;
+    --canvas:#000000; --ghost:#9a9a9a; --cellatom:#e5473f; --edge:#9c9c9c;
+    --tet:#4cc2ff; --oct:#ffc933;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#191918; --panel:#2a2926; --ink:#ece6d2; --muted:#9a9380; --border:#3b3933;
+  --seg-on:#e9e3cd; --seg-on-ink:#191918;
+  --note:#fbf5b6; --note-ink:#33300f;
+  --canvas:#000000; --ghost:#9a9a9a; --cellatom:#e5473f; --edge:#9c9c9c;
+  --tet:#4cc2ff; --oct:#ffc933;
+}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  height:100%;margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",system-ui,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+header{padding:10px 16px 6px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+h1{margin:0;font-size:22px;font-weight:700;letter-spacing:.02em;line-height:1.25}
+.ex{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.tag{font-size:12px;color:var(--muted);padding-top:6px;white-space:nowrap}
+
+.bar{display:flex;flex-wrap:wrap;gap:8px 10px;padding:6px 12px 10px;align-items:center}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:2px}
+.seg button{
+  border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;
+  padding:6px 12px;border-radius:999px;cursor:pointer;min-height:32px
+}
+.seg button[aria-pressed="true"]{background:var(--seg-on);color:var(--seg-on-ink);font-weight:600}
+.chip{
+  display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--border);background:transparent;
+  color:var(--ink);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer;min-height:34px
+}
+.chip i{width:11px;height:11px;border-radius:50%;display:inline-block;background:var(--c);opacity:.35}
+.chip[aria-pressed="true"]{border-color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
+.chip[aria-pressed="true"] i{opacity:1}
+.spacer{flex:1}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+#stage{position:relative;flex:1;min-height:0;background:var(--canvas);touch-action:none;cursor:grab}
+#stage:active{cursor:grabbing}
+canvas{display:block;width:100%;height:100%}
+#spin{
+  position:absolute;right:10px;top:10px;border:1px solid var(--border);
+  background:color-mix(in srgb,var(--bg) 80%,transparent);color:var(--ink);
+  font:inherit;font-size:12px;padding:6px 10px;border-radius:999px;cursor:pointer
+}
+#spin[aria-pressed="true"]{background:var(--seg-on);color:var(--seg-on-ink)}
+#hint{position:absolute;left:12px;top:12px;font-size:11px;color:var(--muted);pointer-events:none}
+
+.info{padding:8px 14px 6px;font-size:12.5px;line-height:1.55;color:var(--ink);background:var(--bg)}
+.info div{display:flex;align-items:baseline;gap:8px}
+.info b{font-weight:700}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;transform:translateY(0)}
+.info small{color:var(--muted);font-size:11.5px;display:block;margin-top:2px}
+
+.notes{display:grid;grid-template-columns:repeat(4,1fr);gap:0;padding:6px 0 10px}
+.note{
+  border:0;font:inherit;background:var(--note);color:var(--note-ink);cursor:pointer;
+  min-height:46px;padding:6px 6px 8px;font-size:13px;
+  clip-path:polygon(0 0,100% 0,100% 62%,calc(100% - 14px) 100%,0 100%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;line-height:1.25
+}
+.note + .note{margin-left:-1px}
+.note span{font-weight:700;font-size:15px}
+.note small{font-size:11px;opacity:.55}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title">六方最密構造</h1>
+    <p class="ex" id="ex">例 Mg, Zn</p>
+  </div>
+  <div class="tag">金属結晶</div>
+</header>
+
+<div class="bar">
+  <div class="seg" id="segStruct" role="group" aria-label="構造">
+    <button data-k="hcp" aria-pressed="true">六方最密</button>
+    <button data-k="fcc" aria-pressed="false">面心立方</button>
+    <button data-k="bcc" aria-pressed="false">体心立方</button>
+  </div>
+  <button class="chip" id="chipTet" aria-pressed="true" style="--c:var(--tet)"><i></i><span id="lblTet">正四面体隙間</span></button>
+  <button class="chip" id="chipOct" aria-pressed="true" style="--c:var(--oct)"><i></i><span id="lblOct">正八面体隙間</span></button>
+  <span class="spacer"></span>
+  <div class="seg" id="segSize" role="group" aria-label="原子の大きさ">
+    <button data-v="0" aria-pressed="true">原子 小</button>
+    <button data-v="1" aria-pressed="false">原子 大</button>
+  </div>
+  <div class="seg" id="segView" role="group" aria-label="表示範囲">
+    <button data-v="0" aria-pressed="true">単位格子</button>
+    <button data-v="1" aria-pressed="false">周囲も表示</button>
+  </div>
+</div>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="hint">ドラッグで回転・ピンチで拡大</div>
+  <button id="spin" aria-pressed="false">自動回転</button>
+</div>
+
+<div class="info">
+  <div><span class="dot" style="background:var(--tet)"></span><span><b id="nameTet">正四面体隙間</b> <span id="nTet"></span>　隙間に入る球の半径 <span id="rTet"></span></span></div>
+  <div><span class="dot" style="background:var(--oct)"></span><span><b id="nameOct">正八面体隙間</b> <span id="nOct"></span>　隙間に入る球の半径 <span id="rOct"></span></span></div>
+  <small id="infoNote"></small>
+</div>
+
+<div class="notes" id="notes"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+(function(){
+const SQ2 = Math.SQRT2, C_HCP = Math.sqrt(8/3), A_FCC = SQ2; // 隣り合う原子間距離 = 1
+const dist = (a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+
+const META = {
+  hcp:{title:'六方最密構造', ex:'例 Mg, Zn', nTet:'12個 / 格子', nOct:'6個 / 格子',
+       nameTet:'正四面体隙間', nameOct:'正八面体隙間', rTet:'0.225 r', rOct:'0.414 r',
+       note:'原子1個あたり、正四面体隙間は2個、正八面体隙間は1個。辺上・面上の隙間は隣の格子と共有しています。',
+       notes:[['配位数','12'],['格子内 原子数','6個'],['原子半径','r = a/2'],['充填率','約74%']]},
+  fcc:{title:'面心立方格子', ex:'例 Cu, Al, Ag（立方最密構造）', nTet:'8個 / 格子', nOct:'4個 / 格子',
+       nameTet:'正四面体隙間', nameOct:'正八面体隙間', rTet:'0.225 r', rOct:'0.414 r',
+       note:'原子1個あたり、正四面体隙間は2個、正八面体隙間は1個。辺上・面上の隙間は隣の格子と共有しています。',
+       notes:[['配位数','12'],['格子内 原子数','4個'],['原子半径','r = √2a/4'],['充填率','約74%']]},
+  bcc:{title:'体心立方格子', ex:'例 Fe（α鉄）, Na, K, W', nTet:'12個 / 格子', nOct:'6個 / 格子',
+       nameTet:'四面体隙間（ゆがみ）', nameOct:'八面体隙間（ゆがみ）', rTet:'0.291 r', rOct:'0.155 r',
+       note:'体心立方格子の隙間は、どちらも正多面体ではなくゆがんだ形です。原子1個あたり、四面体隙間は6個、八面体隙間は3個。格子ごとに重複なく数えた分を表示しています。',
+       notes:[['配位数','8'],['格子内 原子数','2個'],['原子半径','r = √3a/4'],['充填率','約68%']]}
+};
+
+function hexMax(x,y){
+  let m=-1e9;
+  for(let k=0;k<6;k++){const t=(30+60*k)*Math.PI/180;m=Math.max(m,x*Math.cos(t)+y*Math.sin(t));}
+  return m;
+}
+
+function build(key){
+  const atoms=[]; let tet=[], oct=[], inCell, center, outline=[], voidIn=null, dTet=0.6124, dOct=0.7071;
+  if(key==='fcc'){
+    const A=A_FCC, B=[[0,0,0],[.5,.5,0],[.5,0,.5],[0,.5,.5]];
+    for(let i=-2;i<=3;i++)for(let j=-2;j<=3;j++)for(let k=-2;k<=3;k++)
+      for(const b of B) atoms.push([A*(i+b[0]),A*(j+b[1]),A*(k+b[2])]);
+    for(let i=-1;i<=2;i++)for(let j=-1;j<=2;j++)for(let k=-1;k<=2;k++)
+      for(const b of B){
+        oct.push([A*(i+b[0]+.5),A*(j+b[1]+.5),A*(k+b[2]+.5)]);
+        tet.push([A*(i+b[0]+.25),A*(j+b[1]+.25),A*(k+b[2]+.25)]);
+        tet.push([A*(i+b[0]+.75),A*(j+b[1]+.75),A*(k+b[2]+.75)]);
+      }
+    inCell=(p,s=1,e=1e-3)=>{const h=A/2*s+e;return Math.abs(p[0]-A/2)<=h&&Math.abs(p[1]-A/2)<=h&&Math.abs(p[2]-A/2)<=h;};
+    center=[A/2,A/2,A/2];
+    const V=[];for(let x=0;x<2;x++)for(let y=0;y<2;y++)for(let z=0;z<2;z++)V.push([x*A,y*A,z*A]);
+    for(let a=0;a<8;a++)for(let b=a+1;b<8;b++){
+      if(Math.abs(dist(V[a],V[b])-A)<1e-6) outline.push([V[a],V[b]]);
+    }
+  }else if(key==='bcc'){
+    const A=2/Math.sqrt(3), B=[[0,0,0],[.5,.5,.5]];
+    for(let i=-2;i<=3;i++)for(let j=-2;j<=3;j++)for(let k=-2;k<=3;k++)
+      for(const b of B) atoms.push([A*(i+b[0]),A*(j+b[1]),A*(k+b[2])]);
+    [[.5,.5,0],[.5,0,.5],[0,.5,.5],[.5,0,0],[0,.5,0],[0,0,.5]].forEach(p=>oct.push(p.map(v=>v*A)));
+    for(let z0=0;z0<3;z0++)for(let h=0;h<3;h++){
+      if(h===z0) continue; const q=3-z0-h;
+      for(const qv of [.25,.75]){ const p=[0,0,0]; p[z0]=0; p[h]=.5; p[q]=qv; tet.push(p.map(v=>v*A)); }
+    }
+    inCell=(p,s=1,e=1e-3)=>{const h=A/2*s+e;return Math.abs(p[0]-A/2)<=h&&Math.abs(p[1]-A/2)<=h&&Math.abs(p[2]-A/2)<=h;};
+    voidIn=p=>p.every(v=>v>-1e-3&&v<A-1e-3);
+    center=[A/2,A/2,A/2];
+    dTet=Math.sqrt(5)/4*A; dOct=Math.SQRT2/2*A;
+    const V=[];for(let x=0;x<2;x++)for(let y=0;y<2;y++)for(let z=0;z<2;z++)V.push([x*A,y*A,z*A]);
+    for(let a=0;a<8;a++)for(let b=a+1;b<8;b++){
+      if(Math.abs(dist(V[a],V[b])-A)<1e-6) outline.push([V[a],V[b]]);
+    }
+  }else{
+    const c=C_HCP, s3=Math.sqrt(3)/2;
+    const xy=(fi,fj)=>[fi+fj*.5, fj*s3];
+    for(let i=-4;i<=4;i++)for(let j=-4;j<=4;j++)for(let k=-2;k<=4;k++){
+      const odd=((k%2)+2)%2, sh=odd?1/3:0, q=xy(i+sh,j+sh);
+      atoms.push([q[0],q[1],k*c/2]);
+    }
+    for(let i=-3;i<=3;i++)for(let j=-3;j<=3;j++)for(let k=-2;k<=4;k++){
+      const q=xy(i+2/3,j+2/3); oct.push([q[0],q[1],c/4+k*c/2]);
+    }
+    for(const p of atoms){ tet.push([p[0],p[1],p[2]+3*c/8]); tet.push([p[0],p[1],p[2]-3*c/8]); }
+    inCell=(p,s=1,e=1e-3)=>hexMax(p[0],p[1])<=s3*s+e && Math.abs(p[2]-c/2)<=c/2*s+e;
+    center=[0,0,c/2];
+    const H=[];for(let k=0;k<6;k++){const t=k*Math.PI/3;H.push([Math.cos(t),Math.sin(t)]);}
+    for(let k=0;k<6;k++){
+      const a=H[k], b=H[(k+1)%6];
+      outline.push([[a[0],a[1],0],[b[0],b[1],0]]);
+      outline.push([[a[0],a[1],c],[b[0],b[1],c]]);
+      outline.push([[a[0],a[1],0],[a[0],a[1],c]]);
+    }
+  }
+  const vin=voidIn||inCell;
+  tet=tet.filter(p=>vin(p)); oct=oct.filter(p=>vin(p));
+  return {atoms,tet,oct,inCell,center,outline,dTet,dOct};
+}
+
+function poly(c,d,atoms){
+  const idx=[];
+  atoms.forEach((a,i)=>{ if(dist(a,c)<d+0.03) idx.push(i); });
+  const faces=[], eset=new Set(), edges=[];
+  const sub=(p,q)=>[p[0]-q[0],p[1]-q[1],p[2]-q[2]];
+  for(let x=0;x<idx.length;x++)for(let y=x+1;y<idx.length;y++)for(let z=y+1;z<idx.length;z++){
+    const a=atoms[idx[x]],b=atoms[idx[y]],cc=atoms[idx[z]];
+    const u=sub(b,a),v=sub(cc,a);
+    const n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    let pos=0,neg=0;
+    for(const w of idx){
+      if(w===idx[x]||w===idx[y]||w===idx[z]) continue;
+      const q=sub(atoms[w],a), t=n[0]*q[0]+n[1]*q[1]+n[2]*q[2];
+      if(t>1e-6) pos++; else if(t<-1e-6) neg++;
+    }
+    if(pos===0||neg===0){
+      faces.push([idx[x],idx[y],idx[z]]);
+      [[idx[x],idx[y]],[idx[y],idx[z]],[idx[x],idx[z]]].forEach(e=>{
+        const k=e[0]+'-'+e[1]; if(!eset.has(k)){eset.add(k);edges.push(e);}
+      });
+    }
+  }
+  return {idx,faces,edges};
+}
+
+// ---------- three.js ----------
+const stage=document.getElementById('stage'), cv=document.getElementById('cv');
+const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(38,1,0.1,100);
+scene.add(new THREE.AmbientLight(0xffffff,0.75));
+const dl=new THREE.DirectionalLight(0xffffff,0.8); dl.position.set(3,6,4); scene.add(dl);
+const group=new THREE.Group(); scene.add(group);
+
+const sphereGeo=new THREE.SphereGeometry(1,28,18);
+const cylGeo=new THREE.CylinderGeometry(1,1,1,8,1);
+const UP=new THREE.Vector3(0,1,0);
+
+const cam={az:0.7,el:0.38,dist:6.2};
+const state={key:'hcp',big:false,surr:false,tet:true,oct:true,spin:false,open:{}};
+
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function cyl(a,b,r,mat){
+  const d=new THREE.Vector3().subVectors(b,a), len=d.length();
+  const m=new THREE.Mesh(cylGeo,mat);
+  m.scale.set(r,len,r);
+  m.position.copy(a).addScaledVector(d,.5);
+  m.quaternion.setFromUnitVectors(UP,d.normalize());
+  return m;
+}
+
+let cache={}; 
+function rebuild(){
+  while(group.children.length){
+    const o=group.children.pop();
+    if(o.userData.own&&o.geometry) o.geometry.dispose();
+  }
+  if(!cache[state.key]) cache[state.key]=build(state.key);
+  const D=cache[state.key], cen=D.center;
+  const T=p=>new THREE.Vector3(p[0]-cen[0],p[2]-cen[2],-(p[1]-cen[1]));
+  renderer.setClearColor(new THREE.Color(css('--canvas')),1);
+
+  const tetCol=new THREE.Color(css('--tet')), octCol=new THREE.Color(css('--oct'));
+  const voids=[];
+  if(state.tet) D.tet.forEach(c=>voids.push({c,col:tetCol,p:poly(c,D.dTet,D.atoms)}));
+  if(state.oct) D.oct.forEach(c=>voids.push({c,col:octCol,p:poly(c,D.dOct,D.atoms)}));
+
+  const inCellSet=new Set(); D.atoms.forEach((a,i)=>{ if(D.inCell(a)) inCellSet.add(i); });
+  const ghost=new Set();
+  if(state.surr){ D.atoms.forEach((a,i)=>{ if(!inCellSet.has(i)&&D.inCell(a,2.0)) ghost.add(i); }); }
+  else voids.forEach(v=>v.p.idx.forEach(i=>{ if(!inCellSet.has(i)) ghost.add(i); }));
+
+  const R=state.big?0.5:0.13;
+  const red=new THREE.MeshStandardMaterial({color:css('--cellatom'),roughness:.45,metalness:.05,
+    transparent:state.big,opacity:state.big?0.42:1,depthWrite:!state.big});
+  const gray=new THREE.MeshStandardMaterial({color:css('--ghost'),roughness:.6,
+    transparent:true,opacity:state.big?0.14:0.45,depthWrite:false});
+  const addAtom=(i,mat)=>{
+    const m=new THREE.Mesh(sphereGeo,mat); m.scale.setScalar(R); m.position.copy(T(D.atoms[i])); group.add(m);
+  };
+  ghost.forEach(i=>addAtom(i,gray));
+  inCellSet.forEach(i=>addAtom(i,red));
+
+  const edgeMat=new THREE.MeshBasicMaterial({color:css('--edge')});
+  D.outline.forEach(([a,b])=>group.add(cyl(T(a),T(b),0.022,edgeMat)));
+
+  voids.forEach(v=>{
+    const pos=[];
+    v.p.faces.forEach(f=>f.forEach(i=>{const t=T(D.atoms[i]);pos.push(t.x,t.y,t.z);}));
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    const fm=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:v.col,transparent:true,opacity:0.38,side:THREE.DoubleSide,depthWrite:false}));
+    fm.userData.own=true; group.add(fm);
+    const lm=new THREE.MeshBasicMaterial({color:v.col});
+    v.p.edges.forEach(([a,b])=>group.add(cyl(T(D.atoms[a]),T(D.atoms[b]),0.016,lm)));
+    const dot=new THREE.Mesh(sphereGeo,lm); dot.scale.setScalar(0.045); dot.position.copy(T(v.c)); group.add(dot);
+  });
+}
+
+function placeCam(){
+  const d=cam.dist;
+  camera.position.set(d*Math.cos(cam.el)*Math.sin(cam.az), d*Math.sin(cam.el), d*Math.cos(cam.el)*Math.cos(cam.az));
+  camera.lookAt(0,0,0);
+}
+function resize(){
+  const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) return;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------- interaction ----------
+const ptrs=new Map(); let pinch0=0, dist0=0;
+stage.addEventListener('pointerdown',e=>{
+  stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch0=Math.hypot(a.x-b.x,a.y-b.y);dist0=cam.dist;}
+  document.getElementById('hint').style.opacity=0;
+});
+stage.addEventListener('pointermove',e=>{
+  const p=ptrs.get(e.pointerId); if(!p) return;
+  if(ptrs.size===1){
+    cam.az-=(e.clientX-p.x)*0.008;
+    cam.el=Math.max(-1.45,Math.min(1.45,cam.el+(e.clientY-p.y)*0.008));
+  }
+  p.x=e.clientX;p.y=e.clientY;
+  if(ptrs.size===2){
+    const [a,b]=[...ptrs.values()], d=Math.hypot(a.x-b.x,a.y-b.y);
+    if(pinch0>0) cam.dist=Math.max(2.5,Math.min(20,dist0*pinch0/d));
+  }
+});
+const up=e=>{ptrs.delete(e.pointerId);};
+stage.addEventListener('pointerup',up); stage.addEventListener('pointercancel',up);
+stage.addEventListener('wheel',e=>{e.preventDefault();cam.dist=Math.max(2.5,Math.min(20,cam.dist*(1+e.deltaY*0.001)));},{passive:false});
+
+// ---------- UI ----------
+function setPressed(group,fn){
+  group.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',fn(b)?'true':'false'));
+}
+function refreshText(){
+  const m=META[state.key];
+  document.getElementById('title').textContent=m.title;
+  document.getElementById('ex').textContent=m.ex;
+  document.getElementById('nTet').textContent=m.nTet;
+  document.getElementById('nOct').textContent=m.nOct;
+  document.getElementById('nameTet').textContent=m.nameTet;
+  document.getElementById('nameOct').textContent=m.nameOct;
+  document.getElementById('lblTet').textContent=m.nameTet;
+  document.getElementById('lblOct').textContent=m.nameOct;
+  document.getElementById('rTet').textContent=m.rTet;
+  document.getElementById('rOct').textContent=m.rOct;
+  document.getElementById('infoNote').textContent=m.note;
+  const box=document.getElementById('notes'); box.innerHTML='';
+  m.notes.forEach(([label,val],i)=>{
+    const b=document.createElement('button'); b.className='note';
+    const key=state.key+i, open=!!state.open[key];
+    b.innerHTML=open?'<small>'+label+'</small><span>'+val+'</span>':'<span style="font-weight:600;font-size:13px">'+label+'</span>';
+    b.setAttribute('aria-label',label+(open?'：'+val:'（タップで表示）'));
+    b.onclick=()=>{state.open[key]=!state.open[key];refreshText();};
+    box.appendChild(b);
+  });
+}
+const segStruct=document.getElementById('segStruct'),segSize=document.getElementById('segSize'),segView=document.getElementById('segView');
+segStruct.onclick=e=>{const b=e.target.closest('button');if(!b)return;state.key=b.dataset.k;
+  setPressed(segStruct,x=>x.dataset.k===state.key);refreshText();rebuild();};
+segSize.onclick=e=>{const b=e.target.closest('button');if(!b)return;state.big=b.dataset.v==='1';
+  setPressed(segSize,x=>(x.dataset.v==='1')===state.big);rebuild();};
+segView.onclick=e=>{const b=e.target.closest('button');if(!b)return;state.surr=b.dataset.v==='1';
+  setPressed(segView,x=>(x.dataset.v==='1')===state.surr);cam.dist=state.surr?9.5:6.2;rebuild();};
+const chipTet=document.getElementById('chipTet'),chipOct=document.getElementById('chipOct');
+chipTet.onclick=()=>{state.tet=!state.tet;chipTet.setAttribute('aria-pressed',state.tet);rebuild();};
+chipOct.onclick=()=>{state.oct=!state.oct;chipOct.setAttribute('aria-pressed',state.oct);rebuild();};
+const spin=document.getElementById('spin');
+spin.onclick=()=>{state.spin=!state.spin;spin.setAttribute('aria-pressed',state.spin);};
+
+// theme changes
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>setTimeout(rebuild,50));
+new MutationObserver(()=>setTimeout(rebuild,50)).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+refreshText(); resize(); rebuild();
+let last=performance.now();
+(function loop(t){
+  const dt=Math.min(0.05,(t-last)/1000); last=t;
+  if(state.spin && ptrs.size===0) cam.az+=dt*0.6;
+  placeCam(); renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+})(last);
+})();
+</script>
+</body>
+</html>
